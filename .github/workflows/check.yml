@@ -1,0 +1,108 @@
+# Build the IRIX sysroot with clang-retro's clang and run the examples in
+# qemu-irix, in IRIX's three ABIs, for every pull request and push.
+#
+# clang comes from clang-retro/llvm's llvm-prebuilt release, which holds the
+# LLVM tools built from recent commits of its main branch; the newest Linux
+# one is used, with compiler-rt from the same commit and picolibc from
+# clang-retro/picolibc's main branch. qemu-irix is built from source and
+# kept in the cache.
+name: Check
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', 'docs/**', '.docs/**', 'mkdocs.yml', '.github/workflows/docs.yml', 'LICENSE*']
+  pull_request:
+    paths-ignore: ['**/*.md', 'docs/**', '.docs/**', 'mkdocs.yml', '.github/workflows/docs.yml', 'LICENSE*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QEMU_IRIX_SHA: 6d7d1fde2f68adf795e51a19ad2572a48931884e
+
+jobs:
+  irix:
+    name: IRIX (o32, n32, 64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Shell syntax
+        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh; do sh -n "$f"; done
+      - name: Install build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build cmake meson \
+            pkg-config libglib2.0-dev libpixman-1-dev zlib1g-dev
+      - name: Get clang
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset=$(gh api repos/clang-retro/llvm/releases/tags/llvm-prebuilt --jq \
+            '[.assets[] | select(.name | startswith("llvm-linux-"))] | sort_by(.created_at) | last | .name')
+          echo "Using $asset"
+          gh release download llvm-prebuilt -R clang-retro/llvm -p "$asset" -O llvm.tar.zst
+          mkdir -p "$RUNNER_TEMP/llvm"
+          tar --zstd -xf llvm.tar.zst -C "$RUNNER_TEMP/llvm"
+          rm llvm.tar.zst
+          echo "BIN=$RUNNER_TEMP/llvm/bin" >> "$GITHUB_ENV"
+          # llvm-linux-COMMIT-SCRIPTHASH.tar.zst: compiler-rt from the same commit.
+          sha=${asset#llvm-linux-}
+          echo "LLVM_SHA=${sha%%-*}" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/llvm/bin/clang" --version
+          "$RUNNER_TEMP/llvm/bin/clang" -print-targets | grep -w mips ||
+            { echo "::error::$asset has no MIPS back end"; exit 1; }
+      - name: Get compiler-rt's builtins
+        uses: actions/checkout@v4
+        with:
+          repository: clang-retro/llvm
+          ref: ${{ env.LLVM_SHA }}
+          path: llvm
+          sparse-checkout: |
+            compiler-rt/lib/builtins
+            compiler-rt/cmake
+            compiler-rt/include
+            cmake
+            llvm/cmake
+          persist-credentials: false
+      - name: Get picolibc
+        uses: actions/checkout@v4
+        with:
+          repository: clang-retro/picolibc
+          path: picolibc
+          persist-credentials: false
+      - name: Get qemu-irix
+        id: qemu
+        uses: actions/cache@v4
+        with:
+          path: qemu-irix
+          key: qemu-irix-${{ env.QEMU_IRIX_SHA }}-${{ runner.os }}-${{ hashFiles('irix/tools/build-qemu-irix.sh') }}
+      - name: Build qemu-irix
+        if: steps.qemu.outputs.cache-hit != 'true'
+        run: WORK=$RUNNER_TEMP/build-qemu-irix irix/tools/build-qemu-irix.sh qemu-irix
+      - name: Build the sysroot
+        run: |
+          LLVM_SRC=$PWD/llvm PICOLIBC_SRC=$PWD/picolibc WORK=$RUNNER_TEMP/build-irix \
+            irix/build-sysroot.sh sysroot/mips-sgi-irix
+      - name: Tests
+        run: |
+          CC=$BIN/clang SYSROOT=$PWD/sysroot/mips-sgi-irix QEMU_DIR=$PWD/qemu-irix \
+            irix/tests/run-tests.sh tests-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mips-sgi-irix-sysroot
+          path: sysroot/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: tests-out
+          path: tests-out/
+          retention-days: 7

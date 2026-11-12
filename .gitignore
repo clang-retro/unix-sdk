@@ -1,0 +1,10 @@
+# Never commit files from IRIX or any other commercial UNIX: they can't be
+# redistributed. irix/tools/import-irix.sh copies them into a sysroot
+# outside the repository.
+*.so
+*.so.*
+/build-*/
+/tests-out/
+/sysroot/
+__pycache__/
+/site/
