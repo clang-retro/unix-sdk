@@ -2,7 +2,7 @@
 # Build it with `pip install -r .docs/requirements.txt` and `mkdocs serve`.
 INHERIT: .docs/base.yml
 site_name: UNIX SDK
-site_description: Programs for SGI IRIX and other classic UNIX systems with clang
+site_description: Programs for SGI IRIX, Solaris and other classic UNIX systems with clang
 site_url: https://clang-retro.github.io/unix-sdk/
 repo_url: https://github.com/clang-retro/unix-sdk
 repo_name: clang-retro/unix-sdk
@@ -18,6 +18,7 @@ extra:
       README.md: index.md
       README.md#license: license.md
       irix/README.md: irix.md
+      solaris/README.md: solaris.md
       CONTRIBUTING.md: contributing.md
 
 nav:
@@ -27,6 +28,10 @@ nav:
       - "Using the SDK": irix-using.md
       - "Running programs": irix-running.md
       - "IRIX's own libraries": irix-native.md
+  - "Solaris":
+      - "Overview": solaris.md
+      - "Using the SDK": solaris-using.md
+      - "Running programs": solaris-running.md
   - "Contributing": contributing.md
   - "License": license.md
   - "All clang-retro projects": https://clang-retro.github.io/
