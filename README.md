@@ -7,7 +7,7 @@ system has its own directory:
 | Directory | System | Targets | State |
 |---|---|---|---|
 | [`irix/`](irix/README.md) | SGI IRIX 5.3 and 6.x | `mips-sgi-irix` (o32), `mips64-sgi-irix` (n32, 64) | static programs work, tested in qemu-irix |
-| [`solaris/`](solaris/README.md) | Sun Solaris 2.5 to 10 | `sparc-sun-solaris` (32-bit SPARC, V8 and V8+) | static programs work, tested in qemu-solaris |
+| [`solaris/`](solaris/README.md) | Solaris 2.5 to 11.4 | `sparc-sun-solaris` (32-bit SPARC, V8 and V8+) | static programs work, tested in qemu-solaris |
 
 x86 Solaris, the older BSDs and SCO UnixWare and OpenServer are next, in
 that order.

@@ -1,6 +1,6 @@
 # Solaris
 
-Programs for Sun Solaris 2.5 to 10 on 32-bit SPARC, built with clang from
+Programs for Solaris 2.5 to 11.4 on 32-bit SPARC, built with clang from
 [clang-retro/llvm](https://github.com/clang-retro/llvm). This directory
 has:
 
@@ -59,14 +59,20 @@ machine (by FTP in binary mode, NFS or a CD) and run it.
   `access`. Solaris's error numbers become `errno` values.
 - `time`, `gettimeofday`, `getpid`, `kill`, `raise`.
 - 64-bit arithmetic, from the builtins.
+- Solaris 11: it dropped `open`, `stat`, `unlink`, `mkdir` and other
+  system calls for `openat`, `fstatat` and the other `*at` calls. The C
+  library asks the kernel its release, and on SunOS 5.11 and later
+  (Solaris 11, and illumos) it uses the `*at` calls, so the same program
+  runs on Solaris 2.5 and on 11.4. Solaris 11 runs 32-bit SPARC programs
+  on every machine it supports.
 
 ### Not there yet
 
 - No `getcwd`, directories (`opendir`), `fork`/`exec`, signals from the
   kernel, sockets or threads: the Solaris layer makes only the system
   calls above.
-- Solaris 11 dropped the `open` and `stat` system calls, so these
-  programs don't run there.
+- Solaris 11 is tested only in qemu-solaris run as SunOS 5.11, not yet on
+  a real Solaris 11 machine.
 - `lseek` offsets are limited to 32 bits.
 - Linking against Solaris's own shared libraries (`libc.so.1`) isn't
   done yet.
@@ -79,7 +85,8 @@ emulation extended with Solaris's system calls. It runs 32-bit SPARC V8
 Solaris programs directly on Linux, without a Solaris system:
 
     irix/tools/build-qemu-irix.sh qemu
-    qemu/qemu-solaris ./hello
+    qemu/qemu-solaris ./hello           # as SunOS 5.7
+    qemu/qemu-solaris -r 5.11 ./hello   # as Solaris 11
 
 [IRIX](../irix/README.md) says what the build needs, under "Running
 programs". V8+ programs need a real UltraSPARC, or a whole emulated
@@ -88,7 +95,8 @@ to 9) or `qemu-system-sparc64` (a Sun Ultra 5), with a Solaris
 installation.
 
 The tests build `abitest` at -O0, -O2 and -Os, `hello` and a program that
-exits with status 3, for V8, run them, and link `abitest` for V8+:
+exits with status 3, for V8, run each as Solaris 2.x and as Solaris 11,
+and link `abitest` for V8+:
 
     CC=.../bin/clang SYSROOT=.../sparc-sun-solaris QEMU_DIR=qemu \
       solaris/tests/run-tests.sh

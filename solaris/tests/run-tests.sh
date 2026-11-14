@@ -15,6 +15,9 @@
 #
 # qemu-solaris runs SPARC V8 programs only, so the tests build with
 # -mcpu=v8; programs for V9 CPUs (V8+, clang's default) are only linked.
+# Each program runs twice: as on Solaris 2.x to 10, and with -r 5.11 as on
+# Solaris 11, which has the *at system calls in place of open, stat and
+# others.
 set -e
 here=$(cd "$(dirname "$0")/.." && pwd)
 CC=${CC:-clang}
@@ -29,10 +32,15 @@ bad() { echo "FAIL $*"; fail=1; }
 
 # name expected-status expected-text program args...
 check() {
-  name=$1 status=$2 text=$3 prog=$4
-  shift 4
+  check1 "$1" "" "$@"
+  check1 "$1-sol11" "-r 5.11" "$@"
+}
+check1() {
+  name=$1 qargs=$2 status=$4 text=$5 prog=$6
+  shift 6
   set +e
-  (cd "$out" && ABITEST=yes "${q}qemu-solaris" "$prog" "$@") >"$out/$name.log" 2>&1
+  # shellcheck disable=SC2086
+  (cd "$out" && ABITEST=yes "${q}qemu-solaris" $qargs "$prog" "$@") >"$out/$name.log" 2>&1
   got=$?
   set -e
   if [ $got -ne "$status" ]; then
