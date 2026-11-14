@@ -33,13 +33,14 @@ git -C "$WORK/src" checkout -q -f FETCH_HEAD
 # qemu-solaris knows Solaris 11's *at calls (openat, fstatat, ...) but
 # passes their AT_FDCWD and flags to Linux as they are, writes fstatat's
 # result to the wrong argument and always says SunOS 5.7. This makes it
-# run programs as Solaris 11 does with -r 5.11.
+# run programs as Solaris 11 does with -r 5.11, which also turns away the
+# calls Solaris 11 dropped (open, stat and the others) with ENOSYS.
 git -C "$WORK/src" apply <<'PATCH'
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index f9bc06a..70254e6 100644
+index f9bc06a..dccac83 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
-@@ -8320,6 +8320,26 @@ static int qemu_execve(const char *filename, char **argv, char **envp)
+@@ -8320,6 +8320,31 @@ static int qemu_execve(const char *filename, char **argv, char **envp)
  /* do_syscall() should always have a single exit point at the end so
     that actions, such as logging of syscall results, can be performed.
     All errnos that do_syscall() returns must be -TARGET_<errcode>. */
@@ -58,6 +59,11 @@ index f9bc06a..70254e6 100644
 +    if (f & 0x4) r |= AT_EACCESS;
 +    return r;
 +}
++static int sol_is_11(void)
++{
++    const char *r = qemu_uname_release;
++    return r && r[0] == '5' && r[1] == '.' && atoi(r + 2) >= 11;
++}
 +#else
 +#define sol_dirfd(fd) (fd)
 +#define sol_atflags(f) (f)
@@ -66,7 +72,27 @@ index f9bc06a..70254e6 100644
  abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                      abi_long arg2, abi_long arg3, abi_long arg4,
                      abi_long arg5, abi_long arg6, abi_long arg7,
-@@ -8422,7 +8442,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+@@ -8356,6 +8381,19 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+     if(do_strace)
+         print_syscall(num, arg1, arg2, arg3, arg4, arg5, arg6);
+ 
++#ifdef TARGET_ABI_SOLARIS
++    /* Solaris 11 (-r 5.11 or later) has no open, stat and the others. */
++    if (sol_is_11() &&
++        (num == TARGET_NR_open || num == TARGET_NR_stat ||
++         num == TARGET_NR_lstat || num == TARGET_NR_fstat ||
++         num == TARGET_NR_unlink || num == TARGET_NR_rmdir ||
++         num == TARGET_NR_mkdir || num == TARGET_NR_rename ||
++         num == TARGET_NR_access)) {
++        ret = -TARGET_ENOSYS;
++        goto fail;
++    }
++#endif
++
+     switch(num) {
+     case TARGET_NR_exit:
+ #if defined(TARGET_ABI_IRIX) && defined(__NR_exit_group)
+@@ -8422,7 +8460,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
      case TARGET_NR_openat:
          if (!(p = lock_user_string(arg2)))
              goto efault;
@@ -75,7 +101,7 @@ index f9bc06a..70254e6 100644
                                    target_to_host_bitmask(arg3, fcntl_flags_tbl),
                                    arg4));
          fd_trans_unregister(ret);
-@@ -8574,7 +8594,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+@@ -8574,7 +8612,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
      case TARGET_NR_unlinkat:
          if (!(p = lock_user_string(arg2)))
              goto efault;
@@ -84,7 +110,7 @@ index f9bc06a..70254e6 100644
          unlock_user(p, arg2, 0);
          break;
  #endif
-@@ -8977,7 +8997,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+@@ -8977,7 +9015,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
      case TARGET_NR_faccessat:
          if (!(p = lock_user_string(arg2)))
              goto efault;
@@ -93,7 +119,7 @@ index f9bc06a..70254e6 100644
          unlock_user(p, arg2, 0);
          break;
  #endif
-@@ -9026,7 +9046,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+@@ -9026,7 +9064,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
              if (!p || !p2)
                  ret = -TARGET_EFAULT;
              else
@@ -102,7 +128,7 @@ index f9bc06a..70254e6 100644
              unlock_user(p2, arg4, 0);
              unlock_user(p, arg2, 0);
          }
-@@ -9060,7 +9080,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+@@ -9060,7 +9098,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
      case TARGET_NR_mkdirat:
          if (!(p = lock_user_string(arg2)))
              goto efault;
@@ -111,7 +137,7 @@ index f9bc06a..70254e6 100644
          unlock_user(p, arg2, 0);
          break;
  #endif
-@@ -10659,11 +10679,21 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+@@ -10659,11 +10697,21 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
          break;
  #ifdef TARGET_NR_fstatat
      case TARGET_NR_fstatat:
@@ -138,7 +164,7 @@ index f9bc06a..70254e6 100644
  #endif
  #ifdef TARGET_NR_olduname
      case TARGET_NR_olduname:
-@@ -14054,7 +14084,8 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+@@ -14054,7 +14102,8 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
              strncpy(target_buf, "SunOS", arg3-1);
              break;
          case TARGET_NR_sysinfo_release:
