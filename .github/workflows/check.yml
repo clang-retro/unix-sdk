@@ -109,8 +109,16 @@ jobs:
           retention-days: 7
 
   solaris:
-    name: Solaris (32-bit SPARC)
+    name: Solaris (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: sparc, triple: sparc-sun-solaris, backend: sparc, name: 32-bit SPARC }
+          - { arch: i386, triple: i386-pc-solaris, backend: x86, name: 32-bit x86 }
+    env:
+      ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,8 +146,8 @@ jobs:
           sha=${asset#llvm-linux-}
           echo "LLVM_SHA=${sha%%-*}" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/llvm/bin/clang" --version
-          "$RUNNER_TEMP/llvm/bin/clang" -print-targets | grep -w sparc ||
-            { echo "::error::$asset has no SPARC back end"; exit 1; }
+          "$RUNNER_TEMP/llvm/bin/clang" -print-targets | grep -w ${{ matrix.backend }} ||
+            { echo "::error::$asset has no ${{ matrix.backend }} back end"; exit 1; }
       - name: Get compiler-rt's builtins
         uses: actions/checkout@v4
         with:
@@ -171,19 +179,19 @@ jobs:
       - name: Build the sysroot
         run: |
           LLVM_SRC=$PWD/llvm PICOLIBC_SRC=$PWD/picolibc WORK=$RUNNER_TEMP/build-solaris \
-            solaris/build-sysroot.sh sysroot/sparc-sun-solaris
+            solaris/build-sysroot.sh sysroot/${{ matrix.triple }}
       - name: Tests
         run: |
-          CC=$BIN/clang SYSROOT=$PWD/sysroot/sparc-sun-solaris QEMU_DIR=$PWD/qemu-irix \
+          CC=$BIN/clang SYSROOT=$PWD/sysroot/${{ matrix.triple }} QEMU_DIR=$PWD/qemu-irix \
             solaris/tests/run-tests.sh tests-out
       - uses: actions/upload-artifact@v4
         with:
-          name: sparc-sun-solaris-sysroot
+          name: ${{ matrix.triple }}-sysroot
           path: sysroot/
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: solaris-tests-out
+          name: solaris-${{ matrix.arch }}-tests-out
           path: tests-out/
           retention-days: 7
