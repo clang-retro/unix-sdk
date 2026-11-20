@@ -1,7 +1,7 @@
-# Build the IRIX, Solaris and FreeBSD sysroots with clang-retro's clang and
-# run the examples in qemu-irix (IRIX's three ABIs), qemu-solaris and
-# qemu-solarisx86 (32-bit SPARC and x86) and bsdrun (32-bit x86 FreeBSD),
-# for every pull request and push.
+# Build the IRIX, Solaris, FreeBSD and NetBSD sysroots with clang-retro's
+# clang and run the examples in qemu-irix (IRIX's three ABIs), qemu-solaris
+# and qemu-solarisx86 (32-bit SPARC and x86) and bsdrun (32-bit x86 FreeBSD
+# and NetBSD), for every pull request and push.
 #
 # clang comes from clang-retro/llvm's llvm-prebuilt release, which holds the
 # LLVM tools built from recent commits of its main branch; the newest Linux
@@ -198,8 +198,16 @@ jobs:
           retention-days: 7
 
   bsd:
-    name: FreeBSD (32-bit x86)
+    name: ${{ matrix.name }} (32-bit x86)
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { bsd: freebsd, name: FreeBSD }
+          - { bsd: netbsd, name: NetBSD }
+    env:
+      BSD: ${{ matrix.bsd }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -244,19 +252,19 @@ jobs:
           persist-credentials: false
       - name: Build the sysroot
         run: |
-          LLVM_SRC=$PWD/llvm PICOLIBC_SRC=$PWD/picolibc WORK=$RUNNER_TEMP/build-freebsd \
-            bsd/build-sysroot.sh sysroot/i386-unknown-freebsd
+          LLVM_SRC=$PWD/llvm PICOLIBC_SRC=$PWD/picolibc WORK=$RUNNER_TEMP/build-bsd \
+            bsd/build-sysroot.sh sysroot/i386-unknown-${{ matrix.bsd }}
       - name: Tests
         run: |
-          CC=$BIN/clang SYSROOT=$PWD/sysroot/i386-unknown-freebsd bsd/tests/run-tests.sh tests-out
+          CC=$BIN/clang SYSROOT=$PWD/sysroot/i386-unknown-${{ matrix.bsd }} bsd/tests/run-tests.sh tests-out
       - uses: actions/upload-artifact@v4
         with:
-          name: i386-unknown-freebsd-sysroot
+          name: i386-unknown-${{ matrix.bsd }}-sysroot
           path: sysroot/
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: freebsd-tests-out
+          name: ${{ matrix.bsd }}-tests-out
           path: tests-out/
           retention-days: 7
