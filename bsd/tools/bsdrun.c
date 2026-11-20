@@ -2,7 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (c) 2026 clang-retro contributors
  *
- * bsdrun: run a static 32-bit x86 FreeBSD program on Linux, for testing.
+ * bsdrun: run a static 32-bit x86 FreeBSD or NetBSD program on Linux, for
+ * testing.
  *
  *   bsdrun [-v] PROGRAM [ARGS...]
  *
@@ -14,7 +15,8 @@
  * program, so memory, files and brk are the program's own. On the way out
  * bsdrun gives the result back the BSD way: eax (and edx), with the carry
  * flag set and a BSD error number on failure, and BSD structures (stat)
- * converted in place.
+ * converted in place. The ELF header (OS/ABI FreeBSD) or a NetBSD ident
+ * note says which BSD the program is for.
  *
  * Only what the C library in the sysroot uses is translated; any other
  * call fails with ENOSYS, and -v prints each call. Needs an x86-64 or i386
@@ -169,17 +171,44 @@ static uint32_t linux_sig(uint32_t s)
     return s < 32 ? map[s] : 0;
 }
 
-/* Linux struct stat64 (i386) to FreeBSD's struct stat; both are 96 bytes. */
+enum { OS_FREEBSD, OS_NETBSD };
+static int os = OS_FREEBSD;
+
+/* NetBSD's __stat13 calls (compat_30 in NetBSD 3.0 and later). */
+enum { N_stat = 278, N_fstat = 279, N_lstat = 280 };
+
+/* Size of the BSD struct stat, which the Linux struct stat64 (96 bytes)
+ * is written into first. */
+#define BSD_STAT_SIZE (os == OS_NETBSD ? 100 : 96)
+
+/* Linux struct stat64 (i386) to the BSD's struct stat, in place. */
 static void stat_to_bsd(unsigned char *b)
 {
     unsigned char l[96];
     memcpy(l, b, 96);
-    memset(b, 0, 96);
+    memset(b, 0, BSD_STAT_SIZE);
 #define G32(o) (*(uint32_t *)(l + (o)))
 #define G64(o) (*(uint64_t *)(l + (o)))
 #define P32(o, v) (*(uint32_t *)(b + (o)) = (uint32_t)(v))
 #define P16(o, v) (*(uint16_t *)(b + (o)) = (uint16_t)(v))
 #define P64(o, v) (*(uint64_t *)(b + (o)) = (uint64_t)(v))
+    if (os == OS_NETBSD) {
+        /* 32-bit mode and nlink, then everything 4 bytes on. */
+        P32(0, G64(0));             /* st_dev */
+        P32(4, G64(88));            /* st_ino */
+        P32(8, G32(16));            /* st_mode */
+        P32(12, G32(20));           /* st_nlink */
+        P32(16, G32(24));           /* st_uid */
+        P32(20, G32(28));           /* st_gid */
+        P32(24, G64(32));           /* st_rdev */
+        P32(28, G32(64)); P32(32, G32(68)); /* st_atimespec */
+        P32(36, G32(72)); P32(40, G32(76)); /* st_mtimespec */
+        P32(44, G32(80)); P32(48, G32(84)); /* st_ctimespec */
+        P64(52, G64(44));           /* st_size */
+        P64(60, G64(56));           /* st_blocks */
+        P32(68, G32(52));           /* st_blksize */
+        return;
+    }
     P32(0, G64(0));                 /* st_dev */
     P32(4, G64(88));                /* st_ino */
     P16(8, G32(16));                /* st_mode */
@@ -195,6 +224,37 @@ static void stat_to_bsd(unsigned char *b)
     P32(64, G32(52));               /* st_blksize */
 }
 
+/* FreeBSD programs say so in the ELF header; NetBSD ones have a
+ * .note.netbsd.ident note. */
+static int detect_os(const char *path)
+{
+    unsigned char buf[65536];
+    FILE         *f = fopen(path, "rb");
+    if (!f)
+        return OS_FREEBSD;
+    size_t n = fread(buf, 1, sizeof buf, f);
+    fclose(f);
+    if (n < 52 || memcmp(buf, "\177ELF", 4) != 0)
+        return OS_FREEBSD;
+    if (buf[7] == 9) /* ELFOSABI_FREEBSD */
+        return OS_FREEBSD;
+    uint32_t phoff = *(uint32_t *)(buf + 28);
+    uint16_t phentsize = *(uint16_t *)(buf + 42), phnum = *(uint16_t *)(buf + 44);
+    for (unsigned i = 0; i < phnum; i++) {
+        size_t ph = phoff + (size_t)i * phentsize;
+        if (ph + 32 > n || *(uint32_t *)(buf + ph) != 4) /* PT_NOTE */
+            continue;
+        uint32_t off = *(uint32_t *)(buf + ph + 4), sz = *(uint32_t *)(buf + ph + 16);
+        for (uint32_t o = off; o + 12 <= off + sz && o + 12 <= n;) {
+            uint32_t namesz = *(uint32_t *)(buf + o), descsz = *(uint32_t *)(buf + o + 4);
+            if (namesz == 7 && o + 19 <= n && memcmp(buf + o + 12, "NetBSD", 7) == 0)
+                return OS_NETBSD;
+            o += 12 + ((namesz + 3) & ~3u) + ((descsz + 3) & ~3u);
+        }
+    }
+    return OS_FREEBSD;
+}
+
 int main(int argc, char **argv)
 {
     int a = 1;
@@ -207,6 +267,9 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    os = detect_os(argv[a]);
+    if (verbose)
+        fprintf(stderr, "bsdrun: a %s program\n", os == OS_NETBSD ? "NetBSD" : "FreeBSD");
     child = fork();
     if (child < 0) {
         perror("fork");
@@ -302,9 +365,18 @@ int main(int argc, char **argv)
             case B_rename: nr = L_rename; goto two;
             case B_mkdir: nr = L_mkdir; goto two;
             case B_rmdir: nr = L_rmdir; goto one;
-            case B_stat: nr = L_stat64; extra = X_stat; goto two;
-            case B_lstat: nr = L_lstat64; extra = X_stat; goto two;
-            case B_fstat: nr = L_fstat64; extra = X_stat; goto two;
+            case B_stat: case N_stat:
+                if ((bnr == B_stat) != (os == OS_FREEBSD))
+                    break;
+                nr = L_stat64; extra = X_stat; goto two;
+            case B_lstat: case N_lstat:
+                if ((bnr == B_lstat) != (os == OS_FREEBSD))
+                    break;
+                nr = L_lstat64; extra = X_stat; goto two;
+            case B_fstat: case N_fstat:
+                if ((bnr == B_fstat) != (os == OS_FREEBSD))
+                    break;
+                nr = L_fstat64; extra = X_stat; goto two;
             case B_lseek:
                 /* lseek(fd, pad, off_t, whence) -> _llseek(fd, hi, lo, &res,
                  * whence), with the result below the program's stack. */
@@ -354,11 +426,11 @@ int main(int argc, char **argv)
                 res = 0;
                 break;
             case X_stat: {
-                unsigned char b[96];
+                unsigned char b[100];
                 uint32_t      p = arg[1];
-                if (rmem(p, b, 96) == 0) {
+                if (rmem(p, b, BSD_STAT_SIZE) == 0) {
                     stat_to_bsd(b);
-                    wmem(p, b, 96);
+                    wmem(p, b, BSD_STAT_SIZE);
                 }
                 break;
             }
