@@ -8,8 +8,9 @@ system has its own directory:
 |---|---|---|---|
 | [`irix/`](irix/README.md) | SGI IRIX 5.3 and 6.x | `mips-sgi-irix` (o32), `mips64-sgi-irix` (n32, 64) | static programs work, tested in qemu-irix |
 | [`solaris/`](solaris/README.md) | Solaris 2.5 to 11.4 | `sparc-sun-solaris` (32-bit SPARC, V8 and V8+), `i386-pc-solaris` (32-bit x86) | static programs work, tested in qemu-solaris and qemu-solarisx86 |
+| [`bsd/`](bsd/README.md) | FreeBSD 3.0 and later | `i386-unknown-freebsd` (32-bit x86) | static programs work, tested in bsdrun |
 
-The older BSDs and SCO UnixWare and OpenServer are next, in that order.
+NetBSD and OpenBSD, then SCO UnixWare and OpenServer, are next.
 
 Everything here was written for this project and is under the AGPL (see
 [License](#license)), so it can be redistributed. The C library is
@@ -42,6 +43,16 @@ For x86, `ARCH=i386` and `i386-pc-solaris`, `-march=i486` and
 `qemu-solarisx86`.
 
 See [solaris/README.md](solaris/README.md).
+
+## FreeBSD in short
+
+    BIN=.../bin LLVM_SRC=llvm PICOLIBC_SRC=picolibc \
+      bsd/build-sysroot.sh freebsd-sysroot
+    clang --target=i386-unknown-freebsd -march=i486 --sysroot=freebsd-sysroot \
+      -static hello.c -o hello
+    cc -o bsdrun bsd/tools/bsdrun.c && ./bsdrun ./hello
+
+See [bsd/README.md](bsd/README.md).
 
 ## License
 
