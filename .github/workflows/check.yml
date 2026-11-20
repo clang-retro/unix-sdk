@@ -1,6 +1,7 @@
-# Build the IRIX and Solaris sysroots with clang-retro's clang and run the
-# examples in qemu-irix (IRIX's three ABIs) and qemu-solaris (32-bit
-# SPARC), for every pull request and push.
+# Build the IRIX, Solaris and FreeBSD sysroots with clang-retro's clang and
+# run the examples in qemu-irix (IRIX's three ABIs), qemu-solaris and
+# qemu-solarisx86 (32-bit SPARC and x86) and bsdrun (32-bit x86 FreeBSD),
+# for every pull request and push.
 #
 # clang comes from clang-retro/llvm's llvm-prebuilt release, which holds the
 # LLVM tools built from recent commits of its main branch; the newest Linux
@@ -36,7 +37,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Shell syntax
-        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh; do sh -n "$f"; done
+        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh bsd/*.sh bsd/tests/*.sh; do sh -n "$f"; done
       - name: Install build tools
         run: |
           sudo apt-get update -q
@@ -124,7 +125,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Shell syntax
-        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh; do sh -n "$f"; done
+        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh bsd/*.sh bsd/tests/*.sh; do sh -n "$f"; done
       - name: Install build tools
         run: |
           sudo apt-get update -q
@@ -193,5 +194,69 @@ jobs:
         if: failure()
         with:
           name: solaris-${{ matrix.arch }}-tests-out
+          path: tests-out/
+          retention-days: 7
+
+  bsd:
+    name: FreeBSD (32-bit x86)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build cmake meson
+      - name: Get clang
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset=$(gh api repos/clang-retro/llvm/releases/tags/llvm-prebuilt --jq \
+            '[.assets[] | select(.name | startswith("llvm-linux-"))] | sort_by(.created_at) | last | .name')
+          echo "Using $asset"
+          gh release download llvm-prebuilt -R clang-retro/llvm -p "$asset" -O llvm.tar.zst
+          mkdir -p "$RUNNER_TEMP/llvm"
+          tar --zstd -xf llvm.tar.zst -C "$RUNNER_TEMP/llvm"
+          rm llvm.tar.zst
+          echo "BIN=$RUNNER_TEMP/llvm/bin" >> "$GITHUB_ENV"
+          sha=${asset#llvm-linux-}
+          echo "LLVM_SHA=${sha%%-*}" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/llvm/bin/clang" --version
+      - name: Get compiler-rt's builtins
+        uses: actions/checkout@v4
+        with:
+          repository: clang-retro/llvm
+          ref: ${{ env.LLVM_SHA }}
+          path: llvm
+          sparse-checkout: |
+            compiler-rt/lib/builtins
+            compiler-rt/cmake
+            compiler-rt/include
+            cmake
+            llvm/cmake
+          persist-credentials: false
+      - name: Get picolibc
+        uses: actions/checkout@v4
+        with:
+          repository: clang-retro/picolibc
+          path: picolibc
+          persist-credentials: false
+      - name: Build the sysroot
+        run: |
+          LLVM_SRC=$PWD/llvm PICOLIBC_SRC=$PWD/picolibc WORK=$RUNNER_TEMP/build-freebsd \
+            bsd/build-sysroot.sh sysroot/i386-unknown-freebsd
+      - name: Tests
+        run: |
+          CC=$BIN/clang SYSROOT=$PWD/sysroot/i386-unknown-freebsd bsd/tests/run-tests.sh tests-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: i386-unknown-freebsd-sysroot
+          path: sysroot/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: freebsd-tests-out
           path: tests-out/
           retention-days: 7
