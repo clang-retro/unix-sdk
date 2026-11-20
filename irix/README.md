@@ -94,7 +94,7 @@ host), without an IRIX system or ROM:
 It needs a C compiler, python3, pkg-config, and glib, pixman and zlib with
 their headers (Debian and Ubuntu: `build-essential python3 pkg-config
 libglib2.0-dev libpixman-1-dev zlib1g-dev`). It takes about a minute.
-`qemu-solaris` (SPARC) is built too.
+`qemu-solaris` (SPARC) and `qemu-solarisx86` (x86) are built too.
 
 For a whole IRIX system, MAME emulates SGI Indy and Indigo2 machines,
 which need an IRIX installation and the machine's PROM.
