@@ -1,7 +1,7 @@
-# Build the IRIX, Solaris, FreeBSD and NetBSD sysroots with clang-retro's
+# Build the IRIX, Solaris, FreeBSD, NetBSD and Haiku sysroots with clang-retro's
 # clang and run the examples in qemu-irix (IRIX's three ABIs), qemu-solaris
 # and qemu-solarisx86 (32-bit SPARC and x86) and bsdrun (32-bit x86 FreeBSD
-# and NetBSD), for every pull request and push.
+# and NetBSD) and Haiku in QEMU, for every pull request and push.
 #
 # clang comes from clang-retro/llvm's llvm-prebuilt release, which holds the
 # LLVM tools built from recent commits of its main branch; the newest Linux
@@ -37,7 +37,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Shell syntax
-        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh bsd/*.sh bsd/tests/*.sh; do sh -n "$f"; done
+        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh bsd/*.sh bsd/tests/*.sh haiku/*.sh haiku/tests/*.sh haiku/tools/*.sh; do sh -n "$f"; done
       - name: Install build tools
         run: |
           sudo apt-get update -q
@@ -125,7 +125,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Shell syntax
-        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh bsd/*.sh bsd/tests/*.sh; do sh -n "$f"; done
+        run: for f in irix/*.sh irix/tests/*.sh irix/tools/*.sh solaris/*.sh solaris/tests/*.sh bsd/*.sh bsd/tests/*.sh haiku/*.sh haiku/tests/*.sh haiku/tools/*.sh; do sh -n "$f"; done
       - name: Install build tools
         run: |
           sudo apt-get update -q
@@ -266,5 +266,62 @@ jobs:
         if: failure()
         with:
           name: ${{ matrix.bsd }}-tests-out
+          path: tests-out/
+          retention-days: 7
+
+  # Haiku: the sysroot from Haiku's own packages, the runner's clang 18,
+  # and the example in the newest nightly image of Haiku (x86_64 only; the
+  # 32-bit example is built but not run).
+  haiku:
+    name: Haiku (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, triple: x86_64-unknown-haiku, image: x86_64, run: true }
+          - { arch: x86, triple: i586-pc-haiku, image: x86_gcc2h, run: false }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Shell syntax
+        run: for f in haiku/*.sh haiku/tests/*.sh haiku/tools/*.sh; do sh -n "$f"; done
+      - name: Install the tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends clang lld python3-zstandard \
+            ${{ matrix.run && 'qemu-system-x86' || '' }}
+      - name: Build the sysroot
+        run: ARCH=${{ matrix.arch }} WORK=$RUNNER_TEMP/build-haiku haiku/build-sysroot.sh sysroot/${{ matrix.triple }}
+      - name: Find the newest Haiku image
+        if: matrix.run
+        id: image
+        run: echo "name=$(LIST=1 haiku/tools/fetch-image.sh ${{ matrix.image }})" >> "$GITHUB_OUTPUT"
+      - name: Restore the Haiku image
+        if: matrix.run
+        uses: actions/cache@v4
+        with:
+          path: ~/haiku-images
+          key: ${{ steps.image.outputs.name }}
+      # The runner has KVM, but only for the group kvm; a udev rule opens it.
+      - name: Enable KVM
+        if: matrix.run
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Tests
+        run: |
+          if [ "${{ matrix.run }}" = true ]; then
+            export HAIKU_IMAGE=$(haiku/tools/fetch-image.sh ${{ matrix.image }} ~/haiku-images)
+          fi
+          CXX=clang++ TARGET=${{ matrix.triple }} SYSROOT=$PWD/sysroot/${{ matrix.triple }} \
+            haiku/tests/run-tests.sh tests-out
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: haiku-${{ matrix.arch }}-tests-out
           path: tests-out/
           retention-days: 7

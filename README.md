@@ -9,6 +9,7 @@ system has its own directory:
 | [`irix/`](irix/README.md) | SGI IRIX 5.3 and 6.x | `mips-sgi-irix` (o32), `mips64-sgi-irix` (n32, 64) | static programs work, tested in qemu-irix |
 | [`solaris/`](solaris/README.md) | Solaris 2.5 to 11.4 | `sparc-sun-solaris` (32-bit SPARC, V8 and V8+), `i386-pc-solaris` (32-bit x86) | static programs work, tested in qemu-solaris and qemu-solarisx86 |
 | [`bsd/`](bsd/README.md) | FreeBSD 3.0 and later, NetBSD 1.5 and later | `i386-unknown-freebsd`, `i386-unknown-netbsd` (32-bit x86) | static programs work, tested in bsdrun |
+| [`haiku/`](haiku/README.md) | Haiku R1 | `x86_64-unknown-haiku`, `i586-pc-haiku` | programs with Haiku's own libraries work, tested in Haiku in QEMU |
 
 OpenBSD, then SCO UnixWare and OpenServer, are next.
 
@@ -55,6 +56,15 @@ See [solaris/README.md](solaris/README.md).
 For NetBSD, `BSD=netbsd` and `i386-unknown-netbsd`, with `-fuse-ld=lld`.
 
 See [bsd/README.md](bsd/README.md).
+
+## Haiku in short
+
+    haiku/build-sysroot.sh haiku-sysroot
+    clang++ --target=x86_64-unknown-haiku --sysroot=haiku-sysroot -fuse-ld=lld \
+      haiku/examples/hello.cpp -lbe -o hello
+
+Haiku's headers and libraries are free software, so the script gets them
+from Haiku's package repositories. See [haiku/README.md](haiku/README.md).
 
 ## License
 
