@@ -301,8 +301,9 @@ def log(text):
 
 def run_job(server, script):
     """Queues a job and waits for its output. Returns (output, status)."""
-    server.jobs.put(script)
-    out = server.results.get().decode("utf-8", "replace")
+    with server.exec_lock:
+        server.jobs.put(script)
+        out = server.results.get().decode("utf-8", "replace")
     m = re.search(r"@@exit=(\d+)\s*$", out)
     status = int(m.group(1)) if m else 1
     return out[:m.start()] if m else out, status

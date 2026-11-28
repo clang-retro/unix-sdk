@@ -73,7 +73,8 @@ int main(int argc, char **argv) {
   CHECK(sum(4, 10, 20, 30, 40) == 100);
   CHECK(v64 / 1000 == 81985529216486LL && v64 % 1000 == 895);
   CHECK((unsigned long long)v64 >> 40 == 0x12345);
-  CHECK(vd * 4 == 10.0 && (int)(vd * vd * 100) == 625);
+  double d = vd;  // one volatile read: newer clang warns on vd * vd
+  CHECK(d * 4 == 10.0 && (int)(d * d * 100) == 625);
   CHECK(sizeof(long) == sizeof(void *));
 #ifdef __SIZEOF_INT128__
   volatile __int128 w = (__int128)v64 * 1000000007;
